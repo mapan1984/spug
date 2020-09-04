@@ -96,6 +96,7 @@ class ComForm extends React.Component {
     const file = this.state.fileList[0];
     if (file && file.data) formData['pkey'] = file.data;
     formData['tags'] = this.state.tags;
+    formData['category'] = formData['zone'];
     http.post('/api/host/', formData)
       .then(res => {
         if (res === 'auth fail') {
@@ -122,6 +123,7 @@ class ComForm extends React.Component {
     if (this.state.password) {
       formData['password'] = this.state.password;
       formData['tags'] = this.state.tags;
+      formData['category'] = formData['zone'];
       return http.post('/api/host/', formData).then(res => {
         message.success('验证成功');
         store.formVisible = false;
@@ -155,6 +157,7 @@ class ComForm extends React.Component {
         ),
         onOk: () => {
           if (this.state.addZone) {
+            // TODO: 将 addZone 加入 store.categories
             store.zones.push(this.state.addZone);
             this.props.form.setFieldsValue({'zone': this.state.addZone})
           }
@@ -175,7 +178,7 @@ class ComForm extends React.Component {
             </Form.Item>
           </Form>
         ),
-        onOk: () => http.patch('/api/host/', {id: store.record.id, zone: this.state.editZone})
+        onOk: () => http.patch('/api/host/', {id: store.record.id, category: this.state.editZone})
           .then(res => {
             message.success(`成功修改${res}条记录`);
             store.fetchRecords();
@@ -229,6 +232,9 @@ class ComForm extends React.Component {
                   ))}
                 </Select>
               )}
+              {/*
+              <Cascader defaultValue={store.category} options={store.categories} onChange={v => {console.log(v)}} changeOnSelect={true} placeholder="请选择" />
+              */}
             </Col>
             <Col span={4} offset={1}>
               <Button type="link" onClick={this.handleAddZone}>添加类别</Button>

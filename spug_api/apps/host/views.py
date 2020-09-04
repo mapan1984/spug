@@ -6,7 +6,7 @@ from django.db.models import F
 from django.http.response import HttpResponseBadRequest
 from libs import json_response, JsonParser, Argument
 from apps.setting.utils import AppSetting
-from apps.host.models import Host, Tag
+from apps.host.models import Host, Tag, Category
 from apps.app.models import Deploy
 from apps.schedule.models import Task
 from apps.monitor.models import Detection
@@ -26,15 +26,24 @@ class HostView(View):
                 return json_response(error='无权访问该主机，请联系管理员')
             return json_response(Host.objects.get(pk=host_id))
         hosts = Host.objects.filter(deleted_by_id__isnull=True)
-        zones = [x['zone'] for x in hosts.order_by('zone').values('zone').distinct()]
+        categories = Category.forest()
+        zones = [host.zone for host in hosts]
         tags = [tag.name for tag in Tag.objects.all() if tag.host_set.filter(deleted_by_id__isnull=True).count() > 0]
         perms = [x.id for x in hosts] if request.user.is_supper else request.user.host_perms
-        return json_response({'zones': zones, 'hosts': [x.to_dict() for x in hosts], 'perms': perms, 'tags': tags})
+        return json_response(
+            {
+                'zones': zones,
+                'hosts': [x.to_dict() for x in hosts],
+                'perms': perms,
+                'categories': categories,
+                'tags': tags,
+            }
+        )
 
     def post(self, request):
         form, error = JsonParser(
             Argument('id', type=int, required=False),
-            Argument('zone', help='请输入主机类型'),
+            Argument('category', help='请输入主机类型'),
             Argument('tags', type=list, required=False),
             Argument('name', help='请输主机名称'),
             Argument('username', handler=str.strip, help='请输入登录用户名'),
@@ -44,37 +53,48 @@ class HostView(View):
             Argument('desc', required=False),
             Argument('password', required=False),
         ).parse(request.body)
-        if error is None:
-            if valid_ssh(form.hostname, form.port, form.username, password=form.pop('password'),
-                         pkey=form.pkey) is False:
-                return json_response('auth fail')
+        if error is not None:
+            return json_response(error=error)
 
-            if form.id:
-                pk = form.pop('id')
-                Host.objects.filter(pk=pk).update(**{k: v for k, v in form.items() if k != 'tags'})
-                if 'tags' in form:
-                    host = Host.objects.get(pk=pk)
-                    host.update_tags(form.tags)
-            elif Host.objects.filter(name=form.name, deleted_by_id__isnull=True).exists():
-                return json_response(error=f'已存在的主机名称【{form.name}】')
-            else:
-                host = Host.objects.create(created_by=request.user, **{k: v for k, v in form.items() if k != 'tags'})
-                if 'tags' in form:
-                    host.update_tags(form.tags)
-                if request.user.role:
-                    request.user.role.add_host_perm(host.id)
+        if valid_ssh(form.hostname, form.port, form.username, password=form.pop('password'),
+                     pkey=form.pkey) is False:
+            return json_response('auth fail')
+
+        if form.id:
+            pk = form.pop('id')
+            Host.objects.filter(pk=pk).update(**{k: v for k, v in form.items() if k not in ['tags', 'category']})
+            if 'tags' in form:
+                host = Host.objects.get(pk=pk)
+                host.update_tags(form.tags)
+            if 'category' in form:
+                host = Host.objects.get(pk=pk)
+                host.update_category(form.category)
+        # elif Host.objects.filter(name=form.name, deleted_by_id__isnull=True).exists():
+        #     return json_response(error=f'已存在的主机名称【{form.name}】')
+        else:
+            host = Host.objects.create(created_by=request.user, **{k: v for k, v in form.items() if k not in ['tags', 'category']})
+            if 'tags' in form:
+                host.update_tags(form.tags)
+            if 'category' in form:
+                host.update_category(form.category)
+            if request.user.role:
+                request.user.role.add_host_perm(host.id)
+
         return json_response(error=error)
 
     def patch(self, request):
         form, error = JsonParser(
             Argument('id', type=int, required=False),
-            Argument('zone', help='请输入主机类别')
+            Argument('category', help='请输入主机类别')
         ).parse(request.body)
         if error is None:
             host = Host.objects.filter(pk=form.id).first()
             if not host:
                 return json_response(error='未找到指定主机')
-            count = Host.objects.filter(zone=host.zone, deleted_by_id__isnull=True).update(zone=form.zone)
+            count = 0
+            for host in Host.objects.filter(category=host.category, deleted_by_id__isnull=True).all():
+                host.update_category(form.category)
+                count += 1
             return json_response(count)
         return json_response(error=error)
 

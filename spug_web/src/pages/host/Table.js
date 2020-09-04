@@ -92,14 +92,14 @@ class ComTable extends React.Component {
     if (store.f_name) {
       data = data.filter(item => item['name'].toLowerCase().includes(store.f_name.toLowerCase()))
     }
-    if (store.f_zone) {
-      data = data.filter(item => item['zone'].toLowerCase().includes(store.f_zone.toLowerCase()))
-    }
     if (store.f_host) {
       data = data.filter(item => item['hostname'].toLowerCase().includes(store.f_host.toLowerCase()))
     }
     if (store.selectedTags.length > 0) {
       data = data.filter(item => store.selectedTags.every(tag => item['tags'].includes(tag)))
+    }
+    if (store.category) {
+      data = data.filter(item => item.category.startsWith(store.category.join('/')))
     }
     return (
       <React.Fragment>

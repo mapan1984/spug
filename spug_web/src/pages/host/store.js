@@ -23,13 +23,17 @@ class Store {
   @observable tagsData = [];
   @observable selectedTags = [];
 
+  @observable categories = [];
+  @observable category = [];
+
   fetchRecords = () => {
     this.isFetching = true;
     return http.get('/api/host/')
-      .then(({hosts, zones, tags, perms}) => {
+      .then(({hosts, zones, tags, perms, categories}) => {
         this.records = hosts;
         this.zones = zones;
         this.tagsData = tags;
+        this.categories = categories;
         this.permRecords = hosts.filter(item => perms.includes(item.id));
         for (let item of hosts) {
           this.idMap[item.id] = item
