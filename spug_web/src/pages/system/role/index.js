@@ -12,6 +12,7 @@ import ComForm from './Form';
 import PagePerm from './PagePerm';
 import DeployPerm from './DeployPerm';
 import HostPerm from './HostPerm';
+import CategoryPerm from './CategoryPerm';
 import store from './store';
 
 export default observer(function () {
@@ -33,6 +34,7 @@ export default observer(function () {
       {store.pagePermVisible && <PagePerm/>}
       {store.deployPermVisible && <DeployPerm/>}
       {store.hostPermVisible && <HostPerm/>}
+      {store.categoryPermVisible && <CategoryPerm/>}
     </AuthCard>
   )
 })

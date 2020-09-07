@@ -17,7 +17,6 @@ class HostPerm extends React.Component {
     this.state = {
       loading: false,
       hosts: [],
-      apps: []
     }
   }
 

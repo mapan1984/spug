@@ -1,6 +1,8 @@
 # Copyright: (c) OpenSpug Organization. https://github.com/openspug/spug
 # Copyright: (c) <spug.dev@gmail.com>
 # Released under the AGPL-3.0 License.
+import queue
+
 from django.db import models
 from libs import ModelMixin, human_datetime
 from apps.account.models import User
@@ -8,7 +10,7 @@ from apps.setting.utils import AppSetting
 from libs.ssh import SSH
 
 
-class Category(models.Model):
+class Category(models.Model, ModelMixin):
     name = models.CharField(max_length=50)
     parent = models.ForeignKey('self', on_delete=models.CASCADE, blank=True, null=True, related_name='children')
 
@@ -20,14 +22,18 @@ class Category(models.Model):
             k = k.parent
         return '/'.join(full_path[::-1])
 
-    def tree(self, filter_empty=True):
+    def tree(self, filter_empty=True, visited={}):
         """
         将自身结构表达为可被 https://ant.design/components/cascader-cn/ 组件
         的 options 接受的格式
 
         Args:
             filter_empty: 是否过滤没有所属 host 的 Category，默认过滤
+            visited: 缓存每个子节点的结构，以 id 为 key
         """
+        if self.id in visited:
+            return visited[self.id]
+
         res = {
             'value': self.name,
             'label': self.name,
@@ -40,13 +46,14 @@ class Category(models.Model):
                 filter_empty
                 and self.host_set.filter(deleted_by_id__isnull=True).count() == 0
             ):
-                return None
+                visited[self.id] = None
             else:
-                return res
+                visited[self.id] = res
+            return visited[self.id]
 
         res['children'] = []
         for c in childrens:
-            sub_tree = c.tree(filter_empty)
+            sub_tree = c.tree(filter_empty, visited)
             if (
                 not filter_empty
                 or sub_tree is not None
@@ -54,9 +61,14 @@ class Category(models.Model):
                 res['children'].append(sub_tree)
 
         if len(res['children']) > 0:
-            return res
+            visited[self.id] = res
         else:
-            return None
+            if self.host_set.filter(deleted_by_id__isnull=True).count() > 0:
+                del res['children']
+                visited[self.id] = res
+            else:
+                visited[self.id] = None
+        return visited[self.id]
 
     @classmethod
     def forest(cls):
@@ -74,13 +86,18 @@ class Category(models.Model):
         例如：
             location = region/zone，则生成 2 个 Category 实例，name 分别为
             `region` 和 `zone`，将 `zone` Category 的 parent 设置为 `region`
+        Return:
+            current: 最低层次的类别
+            generated: 是否有新生成的类别
         """
         parent = None
         current = None
+        generated = False
         for name in location.split('/'):
-            current, _ = cls.objects.get_or_create(name=name, parent=parent)
+            current, created = cls.objects.get_or_create(name=name, parent=parent)
             parent = current
-        return current
+            generated = generated or created
+        return current, generated
 
     @classmethod
     def zones(cls):
@@ -89,6 +106,94 @@ class Category(models.Model):
             if category.host_set.filter(deleted_by_id__isnull=True).count() > 0:
                 res.append(str(category))
         return res
+
+    @classmethod
+    def sub_zones(cls, categories):
+        res = []
+        for category in categories:
+            name = category['value']
+            if 'children' in category:
+                names = cls.sub_zones(category['children'])
+                for n in names:
+                    res.append(f'{name}/{n}')
+            else:
+                res.append(name)
+        return res
+
+    def to_dict(self, *args, **kwargs):
+        res = super().to_dict(*args, **kwargs)
+        res['full_path'] = str(self)
+        return res
+
+    @classmethod
+    def hosts(cls, category_pks):
+        hosts = []
+        pks = queue.Queue()
+        visited = set()
+        for pk in category_pks:
+            pks.put(pk)
+        while not pks.empty():
+            pk = pks.get()
+            if pk in visited:
+                continue
+            category = cls.objects.get(pk=pk)
+            for host in category.host_set.filter(deleted_by_id__isnull=True).all():
+                hosts.append(host)
+            for c in category.children.all():
+                pks.put(c.id)
+            visited.add(pk)
+        return hosts
+
+    @classmethod
+    def sub_forest(cls, category_pks):
+        visited = {}
+        for pk in category_pks:
+            if pk in visited:
+                continue
+            category = cls.objects.get(pk=pk)
+            category.tree(visited=visited)
+
+        root = set()
+        parent_visited = {}
+        for pk, tree in visited.items():
+            category = cls.objects.get(pk=pk)
+            while category.parent:
+                parent = category.parent
+                if parent.id in visited:
+                    category = parent
+                    continue
+
+                if category.id in visited:
+                    tree = visited[category.id]
+                elif category.id in parent_visited:
+                    tree = parent_visited[category.id]
+                else:
+                    raise KeyError(f'{category.id} not visited')
+
+                if parent.id in parent_visited:
+                    parent_visited[parent.id]['children'].append(tree)
+                else:
+                    parent_visited[parent.id] = {
+                        'value': parent.name,
+                        'label': parent.name,
+                        'children': [tree],
+                    }
+
+                category = parent
+            else:
+                root.add(category.id)
+
+        trees = []
+        for pk in root:
+            if pk in visited:
+                tree = visited[pk]
+            elif pk in parent_visited:
+                tree = parent_visited[pk]
+            else:
+                raise KeyError(f'{pk} not visited')
+            trees.append(tree)
+
+        return trees
 
 
 class Tag(models.Model, ModelMixin):
@@ -149,9 +254,10 @@ class Host(models.Model, ModelMixin):
         self.save()
 
     def update_category(self, category):
-        category = Category.generate(category)
+        category, generated = Category.generate(category)
         self.category = category
         self.save()
+        return generated
 
     def __repr__(self):
         return '<Host %r>' % self.name

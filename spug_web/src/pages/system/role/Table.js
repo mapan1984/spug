@@ -39,6 +39,8 @@ class ComTable extends React.Component {
         <Divider type="vertical"/>
         <LinkButton onClick={() => store.showHostPerm(info)}>主机权限</LinkButton>
         <Divider type="vertical"/>
+        <LinkButton onClick={() => store.showCategoryPerm(info)}>主机类别权限</LinkButton>
+        <Divider type="vertical"/>
         <LinkButton onClick={() => this.handleDelete(info)}>删除</LinkButton>
       </span>
     )

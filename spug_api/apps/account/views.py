@@ -7,6 +7,7 @@ from django.db.models import F
 from libs import JsonParser, Argument, human_datetime, json_response
 from apps.account.models import User, Role
 from apps.setting.models import Setting
+from apps.host.models import Category
 from libs.ldap import LDAP
 import time
 import uuid
@@ -98,7 +99,8 @@ class RoleView(View):
             Argument('id', type=int, help='参数错误'),
             Argument('page_perms', type=dict, required=False),
             Argument('deploy_perms', type=dict, required=False),
-            Argument('host_perms', type=list, required=False)
+            Argument('host_perms', type=list, required=False),
+            Argument('category_perms', type=list, required=False),
         ).parse(request.body)
         if error is None:
             role = Role.objects.filter(pk=form.pop('id')).first()
@@ -110,6 +112,12 @@ class RoleView(View):
                 role.deploy_perms = json.dumps(form.deploy_perms)
             if form.host_perms is not None:
                 role.host_perms = json.dumps(form.host_perms)
+            if form.category_perms is not None:
+                role.category_perms = json.dumps(form.category_perms)
+                host_perms = []
+                for host in Category.hosts(form.category_perms):
+                    host_perms.append(host.id)
+                role.host_perms = json.dumps(host_perms)
             role.user_set.update(token_expired=0)
             role.save()
         return json_response(error=error)

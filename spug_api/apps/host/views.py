@@ -25,9 +25,14 @@ class HostView(View):
             if not request.user.has_host_perm(host_id):
                 return json_response(error='无权访问该主机，请联系管理员')
             return json_response(Host.objects.get(pk=host_id))
-        hosts = Host.objects.filter(deleted_by_id__isnull=True)
-        categories = Category.forest()
-        zones = [host.zone for host in hosts]
+        if request.user.is_supper:
+            hosts = Host.objects.filter(deleted_by_id__isnull=True)
+            categories = Category.forest()
+            zones = Category.zones()
+        else:
+            hosts = Category.hosts(request.user.category_perms)
+            categories = Category.sub_forest(request.user.category_perms)
+            zones = Category.sub_zones(categories)
         tags = [tag.name for tag in Tag.objects.all() if tag.host_set.filter(deleted_by_id__isnull=True).count() > 0]
         perms = [x.id for x in hosts] if request.user.is_supper else request.user.host_perms
         return json_response(
@@ -68,7 +73,9 @@ class HostView(View):
                 host.update_tags(form.tags)
             if 'category' in form:
                 host = Host.objects.get(pk=pk)
-                host.update_category(form.category)
+                generated = host.update_category(form.category)
+                if generated:
+                    request.user.role.add_category_perms(host.category.id)
         # elif Host.objects.filter(name=form.name, deleted_by_id__isnull=True).exists():
         #     return json_response(error=f'已存在的主机名称【{form.name}】')
         else:
@@ -76,9 +83,11 @@ class HostView(View):
             if 'tags' in form:
                 host.update_tags(form.tags)
             if 'category' in form:
-                host.update_category(form.category)
+                generated = host.update_category(form.category)
             if request.user.role:
                 request.user.role.add_host_perm(host.id)
+                if 'category' in form and generated:
+                    request.user.role.add_category_perms(host.category.id)
 
         return json_response(error=error)
 
@@ -95,6 +104,7 @@ class HostView(View):
             for host in Host.objects.filter(category=host.category, deleted_by_id__isnull=True).all():
                 host.update_category(form.category)
                 count += 1
+            request.user.role.add_category_perms(host.category.id)
             return json_response(count)
         return json_response(error=error)
 
@@ -171,6 +181,13 @@ def post_import(request):
             request.user.role.add_host_perm(host.id)
         summary['success'].append(i)
     return json_response(summary)
+
+
+def get_categories(request):
+    categories = Category.objects.all()
+    return json_response({
+        'categories': [c.to_dict() for c in categories]
+    })
 
 
 def valid_ssh(hostname, port, username, password=None, pkey=None, with_expect=True):
