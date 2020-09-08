@@ -5,7 +5,7 @@
  */
 import React from 'react';
 import { observer } from 'mobx-react';
-import { Modal, Table, Input, Button, Select, Tag } from 'antd';
+import { Modal, Table, Input, Button, Cascader, Tag } from 'antd';
 import { SearchForm } from 'components';
 import Tags from '../../host/Tags'
 import store from '../../host/store';
@@ -80,8 +80,8 @@ class HostSelector extends React.Component {
     if (store.f_name) {
       data = data.filter(item => item['name'].toLowerCase().includes(store.f_name.toLowerCase()))
     }
-    if (store.f_zone) {
-      data = data.filter(item => item['zone'].toLowerCase().includes(store.f_zone.toLowerCase()))
+    if (store.category) {
+      data = data.filter(item => item.category.startsWith(store.category.join('/')))
     }
     if (store.selectedTags.length > 0) {
       data = data.filter(item => store.selectedTags.every(tag => item['tags'].includes(tag)))
@@ -97,11 +97,14 @@ class HostSelector extends React.Component {
         maskClosable={false}>
         <SearchForm>
           <SearchForm.Item span={8} title="主机类别">
-            <Select allowClear placeholder="请选择" value={store.f_zone} onChange={v => store.f_zone = v}>
-              {store.zones.map(item => (
-                <Select.Option value={item} key={item}>{item}</Select.Option>
-              ))}
-            </Select>
+            <Cascader
+              defaultValue={store.category}
+              options={store.categories}
+              onChange={v => {store.category = v}}
+              expandTrigger="hover"
+              changeOnSelect={true}
+              placeholder="请选择"
+            />
           </SearchForm.Item>
           <SearchForm.Item span={8} title="主机别名">
             <Input allowClear value={store.f_name} onChange={e => store.f_name = e.target.value} placeholder="请输入"/>
