@@ -65,28 +65,31 @@ class HostView(View):
                      pkey=form.pkey) is False:
             return json_response('auth fail')
 
+        tags = form.pop('tags', None)
+        category = form.pop('category', None)
+
         if form.id:
             pk = form.pop('id')
-            Host.objects.filter(pk=pk).update(**{k: v for k, v in form.items() if k not in ['tags', 'category']})
-            if 'tags' in form:
+            Host.objects.filter(pk=pk).update(**form)
+            if tags is not None:
                 host = Host.objects.get(pk=pk)
-                host.update_tags(form.tags)
-            if 'category' in form:
+                host.update_tags(tags)
+            if category is not None:
                 host = Host.objects.get(pk=pk)
-                generated = host.update_category(form.category)
+                generated = host.update_category(category)
                 if generated:
                     request.user.role.add_category_perms(host.category.id)
         # elif Host.objects.filter(name=form.name, deleted_by_id__isnull=True).exists():
         #     return json_response(error=f'已存在的主机名称【{form.name}】')
         else:
-            host = Host.objects.create(created_by=request.user, **{k: v for k, v in form.items() if k not in ['tags', 'category']})
-            if 'tags' in form:
-                host.update_tags(form.tags)
-            if 'category' in form:
-                generated = host.update_category(form.category)
+            host = Host.objects.create(created_by=request.user, **form)
+            if tags is not None:
+                host.update_tags(tags)
+            if category is not None:
+                generated = host.update_category(category)
             if request.user.role:
                 request.user.role.add_host_perm(host.id)
-                if 'category' in form and generated:
+                if category is not None and generated:
                     request.user.role.add_category_perms(host.category.id)
 
         return json_response(error=error)
@@ -147,13 +150,14 @@ def post_import(request):
             summary['invalid'].append(i)
             continue
         data = AttrDict(
-            zone=row[0].value,
-            name=row[1].value,
-            hostname=row[2].value,
-            port=row[3].value,
-            username=row[4].value,
-            password=row[5].value,
-            desc=row[6].value
+            category=row[0].value,
+            tags=row[1].value,
+            name=row[2].value,
+            hostname=row[3].value,
+            port=row[4].value,
+            username=row[5].value,
+            password=row[6].value,
+            desc=row[7].value
         )
         if Host.objects.filter(hostname=data.hostname, port=data.port, username=data.username,
                                deleted_by_id__isnull=True).exists():
@@ -176,9 +180,17 @@ def post_import(request):
         if Host.objects.filter(name=data.name, deleted_by_id__isnull=True).exists():
             summary['repeat'].append(i)
             continue
+        tags = data.pop('tags', None)
+        category = data.pop('category', None)
         host = Host.objects.create(created_by=request.user, **data)
+        if tags is not None:
+            host.update_tags(tags.split(','))
+        if category is not None:
+            generated = host.update_category(category)
         if request.user.role:
             request.user.role.add_host_perm(host.id)
+            if category is not None and generated:
+                request.user.role.add_category_perms(host.category.id)
         summary['success'].append(i)
     return json_response(summary)
 
